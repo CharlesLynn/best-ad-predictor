@@ -1,0 +1,2 @@
+# best-ad-predictor
+The main function that Kixer is trying to fulfill is selecting the "right" ad for a specific inventory slot. We collect an enormous amount of data per day and the main reason is to improve our models and "learn" what ads are working better than others. Your task is to create a scaled down version of this process. You will be provided with some historical impression data and should write a program that given some input data will select the ad you think has the highest probability of being clicked. 
