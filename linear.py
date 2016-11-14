@@ -1,12 +1,12 @@
 import os
+#import sys
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.linear_model import LinearRegression
 from sklearn.cross_validation import cross_val_score
-from xgboost.sklearn import XGBClassifier
-import xgboost as xgb
 import cPickle
-from dateutil import parser
 import numpy as np
+from collections import OrderedDict
 
 def process_csv(csv_path, test=False):
 	if not test:
@@ -17,62 +17,19 @@ def process_csv(csv_path, test=False):
 	df = pd.read_csv(csv_path, names=columns)
 
 
-	## -- Feature Engineering from Timestamp -- ## 
-	#df['Hour'] = df['Timestamp'].apply(lambda x: round((float(x.split(':')[0][-2:]) + float(x.split(':')[1])/60), 1))
-	df['Day_of_week'] = df['Timestamp'].apply(lambda x: parser.parse(x).strftime("%A"))
-	df['Day'] = df['Timestamp'].apply(lambda x: int(x.split('-')[2][:1]))
-	df['Year'] = df['Timestamp'].apply(lambda x: int(x.split('-')[0]))
-	df['Month'] = df['Timestamp'].apply(lambda x: int(x.split('-')[1]))
+	## -- Feature Engineering from Timestamp -- ## No Performace gains.
+	## Create 'Hour' from 'Timestamp' as a float to improve accuracy.
+	# df['Hour'] = df['Timestamp'].apply(lambda x: round((float(x.split(':')[0][-2:]) + \
+	#     float(x.split(':')[1])/60), 1))
+
+	# df['Day_of_week'] = df['Timestamp'].apply(lambda x: parser.parse(x).strftime("%A"))
+	# df['Day'] = df['Timestamp'].apply(lambda x: int(x.split('-')[2][:1]))
+	# df['Year'] = df['Timestamp'].apply(lambda x: int(x.split('-')[0]))
+	# df['Month'] = df['Timestamp'].apply(lambda x: int(x.split('-')[1]))
 
 	
 	return df
 
-
-def train_xgboost(df_train, features, save_model=False, cv=False):
-
-	# Numerize feature strings for modeling and save feature_ids.
-	feature_ids = {}
-	for col in  features + ['Ad']:
-		if df_train[col].dtype == "object":
-			catigories = list(df_train[col].unique())
-			df_train[col] = df_train[col].apply(lambda cat: catigories.index(cat))
-			feature_ids[col] = {cat: catigories.index(cat) for cat in catigories}
-
-
-	# Fit Gradient Boosted decision model.
-	X = df_train[features + ['Ad']].as_matrix()
-	y = df_train['Clicked'].as_matrix()
-
-	
-        
-    # Declare xgboost model
-	xgb = XGBClassifier(
-		learning_rate =0.05,
-		n_estimators=408,
-		max_depth=6,
-		min_child_weight=6,
-		gamma=0.0,
-		subsample=0.8,
-		colsample_bytree=0.75,
-		reg_alpha = 15.89,
-		objective = 'binary:logistic',
-		scale_pos_weight=1,
-		seed=27)
-	
-	# Fit the model on the data
-	xgb.fit(X, y, eval_metric='auc')
-
-	# Print 5-fold cross validation scores if cv=True. 
-	if cv: 
-		cv_scores = cross_val_score(xgb, X, y, cv=5)
-		print 'cross_val_scores:', cv_scores, cv_scores.mean()
-	
-	# Pickel and save model.
-	if save_model:
-		with open(model_pkl, 'wb') as pickle:
-			cPickle.dump((xgb, feature_ids), pickle)
-
-	return xgb, feature_ids
 
 def model_from_csv(csv_path, features, model_pkl, save_model=False, cv=False):
 	
@@ -120,13 +77,11 @@ def csv_predict(csv_path, model, features, feature_ids):
 	
 
 	X = df_test[features].as_matrix()
-	
 	probs_matrix = np.array([]).reshape(X.shape[0], 0)
 
 	# Create maxtix of Ad-Click probabilities.
 	for ad in range(len(feature_ids['Ad'])):
-		pred_proba = model.predict_proba(np.append(X, np.ones((X.shape[0], 1))*ad, axis=1))[:,1]
-		probs_matrix  = np.column_stack((probs_matrix, pred_proba))
+		probs_matrix  = np.column_stack((probs_matrix, model.predict_proba(np.append(X, np.ones((X.shape[0], 1))*ad, axis=1))[:,1]))
 
 	# Choose the Best Ad by selecting the ad with the highest click probability.
 	df_test['Ad'] = np.argmax(probs_matrix, axis=1)
@@ -142,7 +97,7 @@ def csv_predict(csv_path, model, features, feature_ids):
 def STDIN_predict(raw_in, model, feature_ids):
 
 	# Sets X from raw input.
-	X = rawfeatures_2_list(raw_in, features, feature_ids)
+	X = rawfeatures_2_array(raw_in, features, feature_ids)
 	
 
 	# Creates an array of predicted probabibilities of click-through for every Ad.
@@ -156,7 +111,7 @@ def STDIN_predict(raw_in, model, feature_ids):
 	return raw_in + ',' + ad_ids[np.argmax(predicts_array)]
 
 
-def STDIN_run(output_csv, model, feature_ids):
+def run(output_csv, model, feature_ids):
 	print '(Type q to quit).'
 	print "Enter the Ad opertunity as below or path to csv:"
 	print 'Timestamp,Hour,Browser,Platform>,Region  or  example.csv'
@@ -197,15 +152,11 @@ def load_model(train_csv, model_pkl, cv=False):
 		print "{} or {} needs to be in the file directory.".format(train_csv, model_pkl)
 
 
-def rawfeatures_2_list(raw_in, features, feature_ids):
+def rawfeatures_2_array(raw_in, features, feature_ids):
 	# Creates a numerized array with features in the correct indexes. 
 	input_dict = {}
 	input_dict['Timestamp'] = raw_in.split(':')[0]
-	input_dict['Day_of_week'] = parser.parse(input_dict['Timestamp']).strftime("%A")
-	input_dict['Day'] = int(input_dict['Timestamp'].split('-')[2][:1])
-	input_dict['Year'] = int(input_dict['Timestamp'].split('-')[0])
-	input_dict['Month'] = int(input_dict['Timestamp'].split('-')[1])
-	input_dict['Hour'] =  int(raw_in.split(':')[0][-2:])
+	input_dict['Hour'] =  round(float(raw_in.split(':')[0][-2:]) + float(raw_in.split(':')[1])/60, 0)
 	input_dict['Browser'] =  raw_in.split(',')[2]
 	input_dict['Platform'] =  raw_in.split(',')[3]
 	input_dict['Region'] =  raw_in.split(',')[4]
@@ -215,7 +166,7 @@ def rawfeatures_2_list(raw_in, features, feature_ids):
 
 	# Numerize selected features in order using feature_ids and appended to output_array.
 	for feat in features:
-		if type(input_dict[feat]) == int or type(input_dict[feat]) == float:
+		if feat == 'Hour':
 			output_list.append(input_dict[feat])
 		else:
 			output_list.append(feature_ids[feat][input_dict[feat]])
@@ -230,20 +181,13 @@ if __name__ == '__main__':
 	output_csv = 'output.csv'
 	cross_validate = True
 	
-	# Declare Target
-	target = 'Clicked'
-	exclude = ['Ad'] # Ad is includeing in training, but not in features.
+	# Choose Features from Hour, Browser, Platform, Region. Delete picked model if changed.
+	# Hour and Region are dependent features and the only features with signal that generalizes.
+	features = ['Hour', 'Region']
 
-	# Open CSV into a Pandas dataframe & drop unused features.
-	df_train = process_csv(train_csv)
-
-	# Choose all predictors except target & exclude.
-	features = [x for x in df_train.columns if x not in [target] + exclude]
-	features = ['Hour', 'Region', 'Platform']
 
 	# Load and/or train model, predict best ad via STDIN. 
-	model, feature_ids = train_xgboost(df_train, features, save_model=False, cv=cross_validate)
 	model, feature_ids = load_model(train_csv, model_pkl, cv=cross_validate)
-	STDIN_run(output_csv, model, feature_ids)
+	run(output_csv, model, feature_ids)
 
 
