@@ -18,11 +18,11 @@ def process_csv(csv_path, test=False):
 	## -- Feature Engineering from Timestamp -- ## 
 	#df['Hour'] = df['Timestamp'].apply(lambda x: round((float(x.split(':')[0][-2:]) + float(x.split(':')[1])/60), 1))
 	df['Day_of_week'] = df['Timestamp'].apply(lambda x: parser.parse(x).strftime("%A"))
-	df['Day'] = df['Timestamp'].apply(lambda x: int(x.split('-')[2][:1]))
+	df['Day'] = df['Timestamp'].apply(lambda x: int(x.split('-')[2][:2]))
 	df['Year'] = df['Timestamp'].apply(lambda x: int(x.split('-')[0]))
 	df['Month'] = df['Timestamp'].apply(lambda x: int(x.split('-')[1]))
 
-	
+	#print df.head(2)
 	return df
 
 
@@ -45,17 +45,15 @@ def train_xgboost(df_train, features, target, save_model=False, cv=False):
         
     # Declare XGboost model.
 	xgb = XGBClassifier(
-		learning_rate =0.05,
-		n_estimators=408,
-		max_depth=6,
-		min_child_weight=6,
-		gamma=0.0,
+		learning_rate =0.8,
+		n_estimators=54,
+		max_depth=5,
+		min_child_weight=1,
+		gamma=0.2,
 		subsample=0.8,
 		colsample_bytree=0.75,
-		reg_alpha = 15.89,
-		objective = 'binary:logistic',
-		scale_pos_weight=1,
-		seed=27)
+		reg_alpha = 15.25,
+		objective = 'binary:logistic')
 	
 	# Fit the model on the data
 	xgb.fit(X, y, eval_metric='auc')
@@ -192,17 +190,20 @@ if __name__ == '__main__':
 	train_csv = 'training.csv'
 	model_pkl = 'model.pkl'
 	output_csv = 'output.csv'
-	cross_validate = False
+	cross_validate = True
 	
 	# Declare Target
 	target = 'Clicked'
+	exclude = ['Year', 'Ad']
 	
 	# Open CSV into a Pandas dataframe & drops unused features.
 	df_train = process_csv(train_csv)
 
 	# Choose all predictors/features  except target & exclude.
 	# 	Only predictors 'Hour' and 'Region' are the only features that improved performance on cross validation.
-	features = ['Hour', 'Region'] #['Timestamp', 'Hour', 'Browser', 'Platform', 'Region', 'Day_of_week', 'Day', 'Year', 'Month']
+	features = [x for x in df_train.columns if x not in [target] + exclude]
+	features = ['Hour', 'Region', 'Day', 'Month'] #['Timestamp', 'Hour', 'Browser', 'Platform', 'Region', 'Day_of_week', 'Day', 'Year', 'Month']
+	print features
 
 	# Load and/or train model, predict best ad via STDIN. 
 	model, feature_ids = train_xgboost(df_train, features, target, save_model=False, cv=cross_validate)
